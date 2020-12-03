@@ -1,0 +1,11 @@
+{
+    "prettier.tabWidth": 4,
+    "go.toolsEnvVars": {
+        "GOOS": "js",
+        "GOARCH": "wasm"
+    },
+    "[go]": {
+        "editor.defaultFormatter": "golang.go"
+    },
+    "editor.formatOnSave": true
+}
