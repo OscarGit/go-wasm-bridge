@@ -94,8 +94,6 @@ func ExportFunc(name string, goFn func([]interface{}) (interface{}, error)) {
 		goArgs := make([]interface{}, len(jsArgs))
 
 		for i := range jsArgs {
-			varType := jsArgs[i].Type().String()
-			fmt.Printf("Arg %d: %s\n", i, varType)
 			goArgs[i] = jsToInterface(jsArgs[i])
 		}
 
