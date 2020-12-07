@@ -1,3 +1,5 @@
+// +build js,wasm
+
 package wasmbridge
 
 import (
@@ -6,9 +8,13 @@ import (
 	"syscall/js"
 )
 
+const (
+	wasmBridgeName = "__wasmbridge"
+)
+
 var (
-	global   js.Value
-	goBridge js.Value
+	global       js.Value
+	moduleBridge js.Value
 )
 
 func init() {
@@ -17,27 +23,31 @@ func init() {
 	}
 	bridgeName := os.Args[1]
 	global := js.Global()
-	goBridge = global.Get(bridgeName)
+	moduleBridge = global.Get(wasmBridgeName).Get(bridgeName)
 }
 
 // Will convert a js.Value to a interface acording to the mapping below
 //  Attributes of object and elements of arrays will also be converted with this function
-//  | js.Value					| interface{}				|
-//  |---------------------------|---------------------------|
-//  | undefined					| nil						|
-//  | null						| nil						|
-//  | boolean					| bool						|
-//  | string					| string					|
-//  | number					| float64					|
-//  | bigint					| int						|
-//  | object					| map[string]interface{}	|
-//  | Array (obj)				| []interface{}				|
-//  | Uint8Array (obj)			| []byte					|
-//  | Uint8ClampedArray (obj)	| []byte					|
+//  | js.Value                  | interface{}            |
+//  |---------------------------|------------------------|
+//  | undefined                 | nil                    |
+//  | null                      | nil                    |
+//  | boolean                   | bool                   |
+//  | string                    | string                 |
+//  | number                    | float64                |
+//  | bigint                    | int                    |
+//  | object                    | map[string]interface{} |
+//  | Array (obj)               | []interface{}          |
+//  | Uint8Array (obj)          | []byte                 |
+//  | Uint8ClampedArray (obj)   | []byte                 |
 //
 func jsToInterface(value js.Value) interface{} {
 	primType := value.Type().String()
 	switch primType {
+	case "number":
+		return value.Float()
+	case "bigint":
+		return value.Int()
 	case "undefined":
 		return nil
 	case "null":
@@ -46,10 +56,6 @@ func jsToInterface(value js.Value) interface{} {
 		return value.Bool()
 	case "string":
 		return value.String()
-	case "number":
-		return value.Float()
-	case "bigint":
-		return value.Int()
 	case "object":
 		objType := value.Get("constructor").Get("name").String()
 		switch objType {
@@ -82,15 +88,18 @@ func jsObjToMap(object js.Value) map[string]interface{} {
 	keys := js.Global().Get("Object").Call("keys", object)
 	for i := 0; i < keys.Length(); i++ {
 		key := keys.Index(i).String()
-		attr := object.Get(key)
-		res[key] = jsToInterface(attr)
+		res[key] = jsToInterface(object.Get(key))
 	}
 	return res
 }
 
+func interfaceToJs(value interface{}) js.Value {
+	return js.ValueOf(value)
+}
+
 // ExportFunc - Export function to JS
-func ExportFunc(name string, goFn func([]interface{}) (interface{}, error)) {
-	goBridge.Set(name, js.FuncOf(func(this js.Value, jsArgs []js.Value) interface{} {
+func ExportFunc(name string, goFn func([]interface{}) (interface{}, error), useClamped bool) {
+	moduleBridge.Set(name, js.FuncOf(func(this js.Value, jsArgs []js.Value) interface{} {
 		goArgs := make([]interface{}, len(jsArgs))
 
 		for i := range jsArgs {
@@ -106,13 +115,19 @@ func ExportFunc(name string, goFn func([]interface{}) (interface{}, error)) {
 
 		data, isByteSlice := ret.([]byte)
 		if isByteSlice {
-			jsArray := js.Global().Get("Uint8ClampedArray").New(js.ValueOf(len(data)))
+
+			arrayType := "Uint8Array"
+			if useClamped {
+				arrayType = "Uint8ClampedArray"
+			}
+
+			jsArray := js.Global().Get(arrayType).New(js.ValueOf(len(data)))
 			js.CopyBytesToJS(jsArray, data)
 			this.Set("result", jsArray)
 		} else {
-			this.Set("result", ret)
+			this.Set("result", interfaceToJs(ret))
 		}
 
-		return 0
+		return nil
 	}))
 }
