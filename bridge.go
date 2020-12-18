@@ -18,7 +18,7 @@ var (
 )
 
 func init() {
-	if len(os.Args) != 2 {
+	if len(os.Args) < 2 {
 		panic("Expected two arguments from os.Args")
 	}
 	bridgeName := os.Args[1]
@@ -41,21 +41,21 @@ func init() {
 //  | Uint8Array (obj)          | []byte                 |
 //  | Uint8ClampedArray (obj)   | []byte                 |
 //
-func jsToInterface(value js.Value) interface{} {
+func jsToInterface(value js.Value) (interface{}, error) {
 	primType := value.Type().String()
 	switch primType {
 	case "number":
-		return value.Float()
+		return value.Float(), nil
 	case "bigint":
-		return value.Int()
+		return value.Int(), nil
 	case "undefined":
-		return nil
+		return nil, nil
 	case "null":
-		return nil
+		return nil, nil
 	case "boolean":
-		return value.Bool()
+		return value.Bool(), nil
 	case "string":
-		return value.String()
+		return value.String(), nil
 	case "object":
 		objType := value.Get("constructor").Get("name").String()
 		switch objType {
@@ -68,33 +68,60 @@ func jsToInterface(value js.Value) interface{} {
 		case "Uint8ClampedArray":
 			data := make([]byte, value.Length())
 			js.CopyBytesToGo(data, value)
-			return data
+			return data, nil
 		default:
-			panic(fmt.Sprintf("Object type not supported in wasmbridge: %s", objType))
+			return nil, fmt.Errorf("Object type not supported in wasmbridge: %s", objType)
 		}
 	default:
-		panic(fmt.Sprintf("Primitive type not supported in wasmbridge: %s", primType))
+		return nil, fmt.Errorf("Primitive type not supported in wasmbridge: %s", primType)
 	}
 }
-func jsArrayToArray(array js.Value) []interface{} {
+func jsArrayToArray(array js.Value) ([]interface{}, error) {
 	res := make([]interface{}, array.Length())
 	for i := range res {
-		res[i] = jsToInterface(array.Index(i))
+		value, err := jsToInterface(array.Index(i))
+		if err != nil {
+			return nil, err
+		}
+		res[i] = value
 	}
-	return res
+	return res, nil
 }
-func jsObjToMap(object js.Value) map[string]interface{} {
+func jsObjToMap(object js.Value) (map[string]interface{}, error) {
 	res := map[string]interface{}{}
 	keys := js.Global().Get("Object").Call("keys", object)
 	for i := 0; i < keys.Length(); i++ {
 		key := keys.Index(i).String()
-		res[key] = jsToInterface(object.Get(key))
+		value, err := jsToInterface(object.Get(key))
+		if err != nil {
+			return nil, err
+		}
+		res[key] = value
 	}
-	return res
+	return res, nil
 }
 
-func interfaceToJs(value interface{}) js.Value {
+func interfaceToJs(value interface{}, useClamped bool) js.Value {
+	// Check if result is a byte slice
+	data, isByteSlice := value.([]byte)
+	if isByteSlice {
+		return byteSliceToJs(data, useClamped)
+	}
 	return js.ValueOf(value)
+}
+
+// Will convert a byte slice to a JS Uint8 array
+func byteSliceToJs(data []byte, useClamped bool) js.Value {
+	var arrayType string
+	if useClamped {
+		arrayType = "Uint8ClampedArray"
+	} else {
+		arrayType = "Uint8Array"
+	}
+
+	jsArray := js.Global().Get(arrayType).New(js.ValueOf(len(data)))
+	js.CopyBytesToJS(jsArray, data)
+	return jsArray
 }
 
 // ExportFunc - Export function to JS
@@ -102,32 +129,25 @@ func ExportFunc(name string, goFn func([]interface{}) (interface{}, error), useC
 	moduleBridge.Set(name, js.FuncOf(func(this js.Value, jsArgs []js.Value) interface{} {
 		goArgs := make([]interface{}, len(jsArgs))
 
+		// Convert arguments to GO interface
 		for i := range jsArgs {
-			goArgs[i] = jsToInterface(jsArgs[i])
+			value, err := jsToInterface(jsArgs[i])
+			if err != nil {
+				this.Set("error", err.Error())
+				return nil
+			}
+			goArgs[i] = value
 		}
 
+		// Make call to function
 		ret, err := goFn(goArgs)
-
 		if err != nil {
 			this.Set("error", err.Error())
-			return 1
+			return nil
 		}
 
-		data, isByteSlice := ret.([]byte)
-		if isByteSlice {
-
-			arrayType := "Uint8Array"
-			if useClamped {
-				arrayType = "Uint8ClampedArray"
-			}
-
-			jsArray := js.Global().Get(arrayType).New(js.ValueOf(len(data)))
-			js.CopyBytesToJS(jsArray, data)
-			this.Set("result", jsArray)
-		} else {
-			this.Set("result", interfaceToJs(ret))
-		}
-
+		// Convert and set result
+		this.Set("result", interfaceToJs(ret, useClamped))
 		return nil
 	}))
 }
