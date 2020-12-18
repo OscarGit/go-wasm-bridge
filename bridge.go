@@ -1,6 +1,6 @@
 // +build js,wasm
 
-package wasmbridge
+package jsbridge
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	wasmBridgeName = "__wasmbridge"
+	jsBridgeName = "__jsbridge"
 )
 
 var (
@@ -23,7 +23,7 @@ func init() {
 	}
 	bridgeName := os.Args[1]
 	global := js.Global()
-	moduleBridge = global.Get(wasmBridgeName).Get(bridgeName)
+	moduleBridge = global.Get(jsBridgeName).Get(bridgeName)
 }
 
 // Will convert a js.Value to a interface acording to the mapping below

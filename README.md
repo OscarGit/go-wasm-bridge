@@ -1,1 +1,1 @@
-# go-wasm-bridge
+# jsbridge

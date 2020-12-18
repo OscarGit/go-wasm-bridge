@@ -1,3 +1,3 @@
-module github.com/opkna/wasmbridge
+module jsbridge
 
-go 1.13
+go 1.15
