@@ -8,22 +8,25 @@ import (
 	"syscall/js"
 )
 
-const (
-	jsBridgeName = "__jsbridge"
-)
-
 var (
-	global       js.Value
-	moduleBridge js.Value
+	global  js.Value
+	exports js.Value
 )
 
 func init() {
-	if len(os.Args) < 2 {
-		panic("Expected two arguments from os.Args")
+	if len(os.Args) == 0 {
+		panic("Expected one or more arguments")
 	}
-	bridgeName := os.Args[1]
+
+	if os.Args[0] != "js" {
+		panic("First argument is not 'js'")
+	}
+
 	global := js.Global()
-	moduleBridge = global.Get(jsBridgeName).Get(bridgeName)
+	exports = global
+	for i := range os.Args[1:] {
+		exports = exports.Get(os.Args[i])
+	}
 }
 
 // Will convert a js.Value to a interface acording to the mapping below
@@ -126,7 +129,7 @@ func byteSliceToJs(data []byte, useClamped bool) js.Value {
 
 // ExportFunc - Export function to JS
 func ExportFunc(name string, goFn func([]interface{}) (interface{}, error), useClamped bool) {
-	moduleBridge.Set(name, js.FuncOf(func(this js.Value, jsArgs []js.Value) interface{} {
+	exports.Set(name, js.FuncOf(func(this js.Value, jsArgs []js.Value) interface{} {
 		goArgs := make([]interface{}, len(jsArgs))
 
 		// Convert arguments to GO interface
