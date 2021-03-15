@@ -22,7 +22,7 @@ func init() {
 		panic("First argument is not 'js'")
 	}
 
-	global := js.Global()
+	global = js.Global()
 	exports = global
 	for i := range os.Args[1:] {
 		exports = exports.Get(os.Args[i])
@@ -73,10 +73,10 @@ func jsToInterface(value js.Value) (interface{}, error) {
 			js.CopyBytesToGo(data, value)
 			return data, nil
 		default:
-			return nil, fmt.Errorf("Object type not supported in wasmbridge: %s", objType)
+			return nil, fmt.Errorf("object type not supported in wasmbridge: %s", objType)
 		}
 	default:
-		return nil, fmt.Errorf("Primitive type not supported in wasmbridge: %s", primType)
+		return nil, fmt.Errorf("primitive type not supported in wasmbridge: %s", primType)
 	}
 }
 func jsArrayToArray(array js.Value) ([]interface{}, error) {
